@@ -32,6 +32,18 @@ TASKFILE_EXEC_COMMANDS="php composer artisan"
 | `TASKFILE_EXEC_CONTAINER` | Docker container name |
 | `TASKFILE_EXEC_COMMANDS` | Space-separated commands to route |
 
+### Personal config with Taskfile.local
+
+For personal configuration without modifying the shared `Taskfile`, create a `Taskfile.local`:
+
+```bash
+# Taskfile.local (gitignored)
+TASKFILE_EXEC_CONTAINER="app"
+TASKFILE_EXEC_COMMANDS="php composer artisan"
+```
+
+shellproxy reads `Taskfile.local` first if it exists, otherwise falls back to `Taskfile`. This lets you use shellproxy before your team adopts it.
+
 ## Commands
 
 ```bash

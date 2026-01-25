@@ -77,3 +77,19 @@ setup() {
 @test "command_allowed returns false when no commands specified" {
     ! command_allowed "$FIXTURES/local-project/Taskfile" "php"
 }
+
+@test "get_config_file prefers Taskfile.local over Taskfile" {
+    mkdir -p "$FIXTURES/local-override"
+    echo 'TASKFILE_EXEC_CONTAINER="app"' > "$FIXTURES/local-override/Taskfile"
+    echo 'TASKFILE_EXEC_CONTAINER="local"' > "$FIXTURES/local-override/Taskfile.local"
+
+    result=$(get_config_file "$FIXTURES/local-override")
+    [ "$result" = "$FIXTURES/local-override/Taskfile.local" ]
+
+    rm -rf "$FIXTURES/local-override"
+}
+
+@test "get_config_file falls back to Taskfile" {
+    result=$(get_config_file "$FIXTURES/docker-project")
+    [ "$result" = "$FIXTURES/docker-project/Taskfile" ]
+}

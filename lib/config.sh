@@ -2,6 +2,17 @@
 # Configuration parser - reads Taskfile settings
 # shellcheck disable=SC2155
 
+# Get the config file to use (Taskfile.local if exists, otherwise Taskfile)
+get_config_file() {
+    local project_dir="$1"
+
+    if [[ -f "$project_dir/Taskfile.local" ]]; then
+        echo "$project_dir/Taskfile.local"
+    elif [[ -f "$project_dir/Taskfile" ]]; then
+        echo "$project_dir/Taskfile"
+    fi
+}
+
 # Parse container name from Taskfile
 # Supports formats:
 #   TASKFILE_EXEC_CONTAINER="value"
@@ -67,12 +78,12 @@ get_deps() {
     grep '^# TASKFILE_DEPS:' "$taskfile" 2>/dev/null | cut -d: -f2 | xargs || true
 }
 
-# Find project root (directory containing Taskfile)
+# Find project root (directory containing Taskfile or Taskfile.local)
 find_project_root() {
     local dir="$1"
 
     while [[ "$dir" != "/" ]]; do
-        if [[ -f "$dir/Taskfile" ]]; then
+        if [[ -f "$dir/Taskfile.local" || -f "$dir/Taskfile" ]]; then
             echo "$dir"
             return 0
         fi

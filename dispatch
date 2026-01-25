@@ -18,8 +18,8 @@ cmd="${0##*/}"
 [[ "${SHELLPROXY_DISABLE:-}" == "1" ]] && exec command "$cmd" "$@"
 [[ -z "${SHELLPROXY_PROJECT:-}" ]] && exec command "$cmd" "$@"
 
-taskfile="$SHELLPROXY_PROJECT/Taskfile"
-[[ ! -f "$taskfile" ]] && exec command "$cmd" "$@"
+taskfile=$(get_config_file "$SHELLPROXY_PROJECT")
+[[ -z "$taskfile" ]] && exec command "$cmd" "$@"
 
 container=$(get_container "$taskfile")
 [[ -z "$container" ]] && exec command "$cmd" "$@"
