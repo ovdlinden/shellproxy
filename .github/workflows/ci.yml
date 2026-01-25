@@ -19,6 +19,7 @@ jobs:
           scandir: '.'
           ignore_paths: 'test/fixtures'
           severity: warning
+          additional_files: 'dispatch shellproxy'
 
   test:
     name: Test (${{ matrix.os }})
@@ -30,22 +31,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Bats (Ubuntu)
+      - name: Install bats (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y bats
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
 
-      - name: Install Bats (macOS)
+      - name: Install bats (macOS)
         if: matrix.os == 'macos-latest'
         run: brew install bats-core
 
       - name: Make scripts executable
         run: |
           chmod +x dispatch shellproxy install.sh uninstall.sh
-          chmod +x lib/*.sh
-          chmod +x hooks/*.zsh hooks/*.bash hooks/*.fish
-
-      - name: Create bin directory
-        run: mkdir -p bin
+          chmod +x lib/*.sh hooks/*.zsh hooks/*.bash
 
       - name: Run tests
         run: bats test/*.bats
@@ -60,22 +59,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Make install script executable
-        run: chmod +x install.sh uninstall.sh
-
-      - name: Test local install
+      - name: Test install
         run: |
-          ./install.sh --local --dir /tmp/shellproxy-test <<< "y"
-          [ -f /tmp/shellproxy-test/dispatch ]
-          [ -f /tmp/shellproxy-test/shellproxy ]
-          [ -L /tmp/shellproxy-test/bin/php ]
+          ./install.sh --local
+          source ~/.shellproxy/hooks/hook.bash
+          type _shellproxy_hook
 
-      - name: Test shellproxy command
+      - name: Test shellproxy CLI
         run: |
-          export SHELLPROXY_DIR=/tmp/shellproxy-test
-          /tmp/shellproxy-test/shellproxy version
-          /tmp/shellproxy-test/shellproxy help
+          ~/.shellproxy/shellproxy version
+          ~/.shellproxy/shellproxy help
 
       - name: Test uninstall
         run: |
-          ./uninstall.sh <<< "y" || true
+          ~/.shellproxy/uninstall.sh <<< "y"
+          test ! -d ~/.shellproxy

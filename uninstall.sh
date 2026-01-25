@@ -43,13 +43,13 @@ shell_configs=(
 
 for rc in "${shell_configs[@]}"; do
     if [[ -f "$rc" ]]; then
-        # Remove shellproxy lines
-        if grep -q "shellproxy" "$rc" 2>/dev/null; then
+        # Remove shellproxy hook lines (specific pattern to avoid removing unrelated lines)
+        if grep -qE "(source|\.)[[:space:]]+.*shellproxy/hooks" "$rc" 2>/dev/null; then
             # Create backup
             cp "$rc" "$rc.shellproxy-backup"
 
-            # Remove lines containing shellproxy hook
-            grep -v "shellproxy" "$rc" > "$rc.tmp" || true
+            # Remove only lines that source shellproxy hooks
+            grep -vE "(source|\.)[[:space:]]+.*shellproxy/hooks" "$rc" > "$rc.tmp" || true
             mv "$rc.tmp" "$rc"
 
             log "Cleaned $rc (backup: $rc.shellproxy-backup)"

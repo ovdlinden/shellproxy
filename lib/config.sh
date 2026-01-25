@@ -3,9 +3,30 @@
 # shellcheck disable=SC2155
 
 # Parse container name from Taskfile
+# Supports formats:
+#   TASKFILE_EXEC_CONTAINER="value"
+#   TASKFILE_EXEC_CONTAINER='value'
+#   TASKFILE_EXEC_CONTAINER=value
+#   TASKFILE_EXEC_CONTAINER="value" # comment
 get_container() {
     local taskfile="$1"
-    grep -oE '^TASKFILE_EXEC_CONTAINER="[^"]+"' "$taskfile" 2>/dev/null | cut -d'"' -f2 || true
+    [[ ! -f "$taskfile" ]] && return 0
+
+    # Use sed for robust parsing:
+    # 1. Find line starting with TASKFILE_EXEC_CONTAINER=
+    # 2. Remove the variable name and =
+    # 3. Remove inline comments (# followed by anything)
+    # 4. Remove surrounding quotes
+    # 5. Trim whitespace
+    grep -E '^TASKFILE_EXEC_CONTAINER=' "$taskfile" 2>/dev/null | head -1 | \
+        sed -E "
+            s/^TASKFILE_EXEC_CONTAINER=//
+            s/[[:space:]]*#.*$//
+            s/^[\"']//
+            s/[\"']$//
+            s/^[[:space:]]+//
+            s/[[:space:]]+$//
+        " || true
 }
 
 # Parse dependencies from Taskfile
@@ -60,6 +81,12 @@ get_container_workdir() {
     local project_dir="$1"
     local current_dir="$2"
     local base_path="${3:-/var/www/html}"
+
+    # Verify current_dir is under project_dir
+    if [[ "$current_dir" != "$project_dir"* ]]; then
+        echo "$base_path"  # Fallback to base if not under project
+        return
+    fi
 
     # Calculate relative path from project to current
     local relative="${current_dir#"$project_dir"}"

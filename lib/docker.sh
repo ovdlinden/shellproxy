@@ -38,7 +38,7 @@ container_exec() {
     [[ -n "$env_file" && -f "$env_file" ]] && env_args=(--env-file "$env_file")
 
     local tty_flag="-T"
-    [[ -t 0 && -t 1 ]] && tty_flag=""
+    [[ -t 0 && -t 1 && -t 2 ]] && tty_flag=""
 
     # shellcheck disable=SC2086
     docker compose -f "$compose_file" "${env_args[@]}" exec $tty_flag -w "$workdir" "$container" "$@"
@@ -51,7 +51,7 @@ container_exec_direct() {
     shift 2
 
     local tty_flag=""
-    [[ -t 0 && -t 1 ]] && tty_flag="-it"
+    [[ -t 0 && -t 1 && -t 2 ]] && tty_flag="-it"
 
     # shellcheck disable=SC2086
     docker exec $tty_flag -w "$workdir" "$container" "$@"

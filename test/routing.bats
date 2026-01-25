@@ -73,3 +73,76 @@ setup() {
 
     rm -f "$SHELLPROXY_DIR/bin/echo"
 }
+
+# Error case tests
+
+@test "get_container handles double-quoted value" {
+    taskfile="$FIXTURES/docker-project/Taskfile"
+    container=$(get_container "$taskfile")
+    [ "$container" = "app" ]
+}
+
+@test "get_container handles single-quoted value" {
+    local tmp_taskfile=$(mktemp)
+    echo "TASKFILE_EXEC_CONTAINER='myapp'" > "$tmp_taskfile"
+
+    container=$(get_container "$tmp_taskfile")
+    [ "$container" = "myapp" ]
+
+    rm -f "$tmp_taskfile"
+}
+
+@test "get_container handles unquoted value" {
+    local tmp_taskfile=$(mktemp)
+    echo "TASKFILE_EXEC_CONTAINER=myapp" > "$tmp_taskfile"
+
+    container=$(get_container "$tmp_taskfile")
+    [ "$container" = "myapp" ]
+
+    rm -f "$tmp_taskfile"
+}
+
+@test "get_container handles inline comments" {
+    local tmp_taskfile=$(mktemp)
+    echo 'TASKFILE_EXEC_CONTAINER="myapp" # this is the main container' > "$tmp_taskfile"
+
+    container=$(get_container "$tmp_taskfile")
+    [ "$container" = "myapp" ]
+
+    rm -f "$tmp_taskfile"
+}
+
+@test "get_container_workdir returns base path when current_dir not under project" {
+    result=$(get_container_workdir "/home/user/project" "/tmp/other" "/var/www/html")
+    [ "$result" = "/var/www/html" ]
+}
+
+@test "get_container_workdir calculates correct subpath" {
+    result=$(get_container_workdir "/home/user/project" "/home/user/project/src/app" "/var/www/html")
+    [ "$result" = "/var/www/html/src/app" ]
+}
+
+@test "dispatch falls back to local when Taskfile missing" {
+    export SHELLPROXY_PROJECT="/tmp/nonexistent-project-$$"
+    mkdir -p "$SHELLPROXY_PROJECT"
+
+    ln -sf "$SHELLPROXY_DIR/dispatch" "$SHELLPROXY_DIR/bin/echo"
+
+    result=$("$SHELLPROXY_DIR/bin/echo" "no taskfile")
+    [ "$result" = "no taskfile" ]
+
+    rm -f "$SHELLPROXY_DIR/bin/echo"
+    rm -rf "$SHELLPROXY_PROJECT"
+}
+
+@test "dispatch falls back to local when container not configured" {
+    export SHELLPROXY_PROJECT="$FIXTURES/local-project"
+
+    ln -sf "$SHELLPROXY_DIR/dispatch" "$SHELLPROXY_DIR/bin/echo"
+
+    # local-project has no TASKFILE_EXEC_CONTAINER
+    result=$("$SHELLPROXY_DIR/bin/echo" "no container")
+    [ "$result" = "no container" ]
+
+    rm -f "$SHELLPROXY_DIR/bin/echo"
+}

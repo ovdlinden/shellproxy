@@ -1,29 +1,20 @@
 # Contributing to shellproxy
 
-Thanks for your interest in contributing!
-
 ## Quick Start
 
 ```bash
 git clone https://github.com/ovdlinden/shellproxy.git
 cd shellproxy
 
-# Install git hooks
+# Install git hooks (optional, requires lefthook)
 lefthook install
 
 # Run tests
 bats test/*.bats
 
 # Run linting
-shellcheck dispatch shellproxy lib/*.sh hooks/*.{zsh,bash}
+shellcheck dispatch shellproxy lib/*.sh hooks/*.bash
 ```
-
-## Development Setup
-
-1. Clone the repo
-2. Make scripts executable: `chmod +x dispatch shellproxy install.sh lib/*.sh`
-3. Install lefthook: `brew install lefthook` or `npm install -g lefthook`
-4. Install bats: `brew install bats-core` or `sudo apt install bats`
 
 ## Commit Messages
 
@@ -66,22 +57,6 @@ bats test/routing.bats
 bats --verbose-run test/*.bats
 ```
 
-### Writing tests
-
-```bash
-@test "description of what you're testing" {
-    # Given: setup
-    export SHELLPROXY_PROJECT="$FIXTURES/docker-project"
-
-    # When: action
-    run "$SHELLPROXY_DIR/shellproxy" status
-
-    # Then: assertion
-    [ "$status" -eq 0 ]
-    [[ "$output" =~ "docker" ]]
-}
-```
-
 ## Code Style
 
 - Use [ShellCheck](https://www.shellcheck.net/) for linting
@@ -90,27 +65,17 @@ bats --verbose-run test/*.bats
 - Prefer `local` for function variables
 - Add comments for non-obvious logic
 
-## Project Structure
+## Architecture
 
 ```
-shellproxy/
-├── dispatch            # Command router (thin orchestrator)
-├── shellproxy          # CLI command
-├── lib/
-│   ├── config.sh       # Taskfile parsing
-│   └── docker.sh       # Container health checks & exec
-├── hooks/
-│   ├── hook.zsh
-│   ├── hook.bash
-│   └── hook.fish
-├── test/
-│   ├── fixtures/       # Test projects
-│   ├── config.bats     # Config parsing tests
-│   ├── routing.bats    # Routing integration tests
-│   └── cli.bats        # CLI tests
-├── install.sh
-└── uninstall.sh
+dispatch (thin orchestrator)
+    │
+    ├── lib/logging.sh  (logging only)
+    ├── lib/config.sh   (Taskfile parsing only)
+    └── lib/docker.sh   (Docker operations only)
 ```
+
+Each module has a single responsibility. Keep it that way.
 
 ## Pull Requests
 
@@ -121,19 +86,6 @@ shellproxy/
 5. Ensure linting passes: `shellcheck dispatch shellproxy lib/*.sh`
 6. Push and create a PR against `main`
 
-## Release Process
+## Questions?
 
-Releases are automated via semantic-release:
-
-1. Merge PR to `main`
-2. CI runs tests
-3. semantic-release analyzes commits
-4. Version is bumped based on commit types
-5. CHANGELOG.md is updated
-6. GitHub release is created
-
-## Getting Help
-
-- Open an issue for bugs or feature requests
-- Check existing issues before creating new ones
-- Include reproduction steps for bugs
+Open an issue on GitHub.
