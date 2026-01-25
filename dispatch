@@ -24,6 +24,12 @@ taskfile="$SHELLPROXY_PROJECT/Taskfile"
 container=$(get_container "$taskfile")
 [[ -z "$container" ]] && exec command "$cmd" "$@"
 
+# Check if this command should be routed for this project
+if ! command_allowed "$taskfile" "$cmd"; then
+    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && echo "[shellproxy] '$cmd' not in TASKFILE_EXEC_COMMANDS, using local" >&2
+    exec command "$cmd" "$@"
+fi
+
 compose_file=$(find_compose_file "$SHELLPROXY_PROJECT" "$taskfile" || true)
 if [[ -z "$compose_file" ]]; then
     [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && echo "[shellproxy] No compose file found, using local" >&2

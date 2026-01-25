@@ -55,3 +55,25 @@ setup() {
     result=$(get_container_workdir "/home/user/project" "/home/user/project")
     [ "$result" = "/var/www/html" ]
 }
+
+@test "get_commands returns command list from Taskfile" {
+    result=$(get_commands "$FIXTURES/docker-project/Taskfile")
+    [ "$result" = "php node npm composer echo" ]
+}
+
+@test "get_commands returns empty for project without commands" {
+    result=$(get_commands "$FIXTURES/local-project/Taskfile")
+    [ -z "$result" ]
+}
+
+@test "command_allowed returns true for listed command" {
+    command_allowed "$FIXTURES/docker-project/Taskfile" "php"
+}
+
+@test "command_allowed returns false for unlisted command" {
+    ! command_allowed "$FIXTURES/docker-project/Taskfile" "python"
+}
+
+@test "command_allowed returns false when no commands specified" {
+    ! command_allowed "$FIXTURES/local-project/Taskfile" "php"
+}

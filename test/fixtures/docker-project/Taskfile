@@ -1,6 +1,7 @@
 #!/bin/bash
 # Test fixture: Docker project with container configuration
 TASKFILE_EXEC_CONTAINER="app"
+TASKFILE_EXEC_COMMANDS="php node npm composer echo"
 
 cmd_test() {
     echo "Running test command"

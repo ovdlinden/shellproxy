@@ -29,6 +29,38 @@ get_container() {
         " || true
 }
 
+# Parse commands to route from Taskfile
+# Returns space-separated list of commands
+get_commands() {
+    local taskfile="$1"
+    [[ ! -f "$taskfile" ]] && return 0
+
+    grep -E '^TASKFILE_EXEC_COMMANDS=' "$taskfile" 2>/dev/null | head -1 | \
+        sed -E "
+            s/^TASKFILE_EXEC_COMMANDS=//
+            s/[[:space:]]*#.*$//
+            s/^[\"']//
+            s/[\"']$//
+            s/^[[:space:]]+//
+            s/[[:space:]]+$//
+        " || true
+}
+
+# Check if command should be routed for this project
+command_allowed() {
+    local taskfile="$1"
+    local cmd="$2"
+
+    local commands
+    commands=$(get_commands "$taskfile")
+
+    # If no commands specified, don't route anything
+    [[ -z "$commands" ]] && return 1
+
+    # Check if command is in the list
+    [[ " $commands " == *" $cmd "* ]]
+}
+
 # Parse dependencies from Taskfile
 get_deps() {
     local taskfile="$1"

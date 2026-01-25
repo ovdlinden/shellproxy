@@ -6,7 +6,7 @@
 Route commands to Docker containers automatically. Falls back to local when container is down.
 
 ```bash
-cd ~/my-project          # Has Taskfile with TASKFILE_EXEC_CONTAINER="app"
+cd ~/my-project          # Has Taskfile configured
 php artisan migrate      # Runs in container
 docker compose stop
 php artisan migrate      # Falls back to local
@@ -24,7 +24,13 @@ Add to your project's `Taskfile`:
 
 ```bash
 TASKFILE_EXEC_CONTAINER="app"
+TASKFILE_EXEC_COMMANDS="php composer artisan"
 ```
+
+| Variable | Description |
+|----------|-------------|
+| `TASKFILE_EXEC_CONTAINER` | Docker container name |
+| `TASKFILE_EXEC_COMMANDS` | Space-separated commands to route |
 
 ## Commands
 
@@ -34,8 +40,6 @@ shellproxy list            # Active shims
 shellproxy link <cmd>      # Add shim
 shellproxy unlink <cmd>    # Remove shim
 ```
-
-**Default shims:** `php` `node` `npm` `npx` `yarn` `pnpm` `composer` `artisan`
 
 ## Options
 
