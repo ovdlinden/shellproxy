@@ -1,0 +1,8 @@
+#!/bin/bash
+# Test fixture: Local project without container configuration
+
+cmd_test() {
+    echo "Running local test command"
+}
+
+"cmd_${1:-help}" "${@:2}"

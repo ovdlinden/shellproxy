@@ -1,0 +1,9 @@
+#!/bin/bash
+# Test fixture: Docker project with container configuration
+TASKFILE_EXEC_CONTAINER="app"
+
+cmd_test() {
+    echo "Running test command"
+}
+
+"cmd_${1:-help}" "${@:2}"

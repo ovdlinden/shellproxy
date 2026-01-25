@@ -1,0 +1,7 @@
+services:
+  app:
+    image: php:8.3-cli
+    working_dir: /var/www/html
+    volumes:
+      - ../packages/app:/var/www/html
+    command: ["tail", "-f", "/dev/null"]

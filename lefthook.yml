@@ -1,0 +1,31 @@
+# Lefthook configuration for git hooks
+# Install: lefthook install
+
+pre-commit:
+  parallel: true
+  commands:
+    shellcheck:
+      glob: "**/*.{sh,bash,zsh}"
+      exclude: "test/fixtures/**"
+      run: shellcheck {staged_files}
+      skip:
+        - merge
+        - rebase
+
+    executable:
+      glob: "{dispatch,shellproxy,install.sh,uninstall.sh,lib/*.sh}"
+      run: |
+        for f in {staged_files}; do
+          if [[ -f "$f" && ! -x "$f" ]]; then
+            echo "Error: $f is not executable"
+            exit 1
+          fi
+        done
+      skip:
+        - merge
+        - rebase
+
+pre-push:
+  commands:
+    test:
+      run: bats test/*.bats

@@ -1,0 +1,69 @@
+#!/bin/bash
+# Command router - orchestrates routing decision
+# shellcheck disable=SC2155
+set -euo pipefail
+
+SHELLPROXY_DIR="${SHELLPROXY_DIR:-$HOME/.shellproxy}"
+
+# Source libraries
+source "$SHELLPROXY_DIR/lib/config.sh"
+source "$SHELLPROXY_DIR/lib/docker.sh"
+
+# Get command name from symlink
+cmd="${0##*/}"
+
+# Debug mode
+[[ "${SHELLPROXY_DEBUG:-}" == "1" ]] && set -x
+
+# Explicit disable → local execution
+if [[ "${SHELLPROXY_DISABLE:-}" == "1" ]]; then
+    exec command "$cmd" "$@"
+fi
+
+# Must have SHELLPROXY_PROJECT set by hook
+if [[ -z "${SHELLPROXY_PROJECT:-}" ]]; then
+    exec command "$cmd" "$@"
+fi
+
+taskfile="$SHELLPROXY_PROJECT/Taskfile"
+
+# Verify Taskfile exists
+if [[ ! -f "$taskfile" ]]; then
+    exec command "$cmd" "$@"
+fi
+
+container=$(get_container "$taskfile")
+
+# No container configured → local execution
+if [[ -z "$container" ]]; then
+    exec command "$cmd" "$@"
+fi
+
+# Find compose file
+compose_file=$(find_compose_file "$SHELLPROXY_PROJECT" "$taskfile" || true)
+if [[ -z "$compose_file" ]]; then
+    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && \
+        echo "[shellproxy] No compose file found, using local" >&2
+    exec command "$cmd" "$@"
+fi
+
+# Container not running → local execution (with optional warning)
+if ! container_running "$container"; then
+    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && \
+        echo "[shellproxy] Container '$container' not running, using local" >&2
+    exec command "$cmd" "$@"
+fi
+
+# Calculate working directory inside container
+workdir=$(get_container_workdir "$SHELLPROXY_PROJECT" "$PWD")
+
+# Check for env file
+env_file=""
+[[ -f "$SHELLPROXY_PROJECT/.env" ]] && env_file="$SHELLPROXY_PROJECT/.env"
+
+# Route to container
+if [[ "${SHELLPROXY_USE_COMPOSE:-}" == "1" ]]; then
+    container_exec "$compose_file" "$env_file" "$container" "$workdir" "$cmd" "$@"
+else
+    container_exec_direct "$container" "$workdir" "$cmd" "$@"
+fi

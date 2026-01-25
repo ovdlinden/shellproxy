@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+VERSION
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Test artifacts
+test/fixtures/**/.env
+test/fixtures/**/vendor/
+test/fixtures/**/node_modules/
+
+# Shims (created at install time)
+bin/*
+
+# Local development
+.shellproxy-local/

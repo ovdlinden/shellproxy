@@ -1,0 +1,10 @@
+#!/bin/bash
+# Test fixture: Monorepo package with external deps
+# TASKFILE_DEPS: dev
+TASKFILE_EXEC_CONTAINER="app"
+
+cmd_test() {
+    echo "Running monorepo app test"
+}
+
+"cmd_${1:-help}" "${@:2}"
