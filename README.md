@@ -3,13 +3,13 @@
 [![CI](https://github.com/ovdlinden/shellproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/ovdlinden/shellproxy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Transparent Docker command routing for Taskfile-based projects.
+Route commands to Docker containers automatically. Falls back to local when container is down.
 
 ```bash
-cd ~/projects/my-app     # Has Taskfile with TASKFILE_EXEC_CONTAINER="app"
-php artisan migrate      # → Runs in Docker container
+cd ~/my-project          # Has Taskfile with TASKFILE_EXEC_CONTAINER="app"
+php artisan migrate      # Runs in container
 docker compose stop
-php artisan migrate      # → Falls back to local PHP
+php artisan migrate      # Falls back to local
 ```
 
 ## Install
@@ -18,7 +18,7 @@ php artisan migrate      # → Falls back to local PHP
 curl -fsSL https://raw.githubusercontent.com/ovdlinden/shellproxy/main/install.sh | bash
 ```
 
-## Configure
+## Setup
 
 Add to your project's `Taskfile`:
 
@@ -26,29 +26,24 @@ Add to your project's `Taskfile`:
 TASKFILE_EXEC_CONTAINER="app"
 ```
 
-That's it.
-
-## Usage
+## Commands
 
 ```bash
-shellproxy status        # Show current project/container
-shellproxy list          # List active shims
-shellproxy link python   # Add a shim
-shellproxy unlink python # Remove a shim
+shellproxy status          # Current project & container
+shellproxy list            # Active shims
+shellproxy link <cmd>      # Add shim
+shellproxy unlink <cmd>    # Remove shim
 ```
 
-### Default shims
+**Default shims:** `php` `node` `npm` `npx` `yarn` `pnpm` `composer` `artisan`
 
-`php` `node` `npm` `npx` `yarn` `pnpm` `composer` `artisan`
+## Options
 
-## Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `SHELLPROXY_DISABLE=1` | Disable routing |
-| `SHELLPROXY_VERBOSE=1` | Show fallback warnings |
-| `SHELLPROXY_DEBUG=1` | Debug output |
-| `SHELLPROXY_LOG=1` | Log to `~/.shellproxy/shellproxy.log` |
+```bash
+SHELLPROXY_DISABLE=1 php -v   # Skip routing
+SHELLPROXY_VERBOSE=1 php -v   # Show fallback messages
+SHELLPROXY_DEBUG=1 php -v     # Debug output
+```
 
 ## Uninstall
 
