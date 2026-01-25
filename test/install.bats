@@ -5,12 +5,19 @@ setup() {
     export SHELLPROXY_DIR="${BATS_TEST_DIRNAME}/.."
     export TEST_INSTALL_DIR="/tmp/shellproxy-test-$$"
 
+    # Use fake HOME to avoid polluting real shell config
+    export REAL_HOME="$HOME"
+    export HOME="/tmp/shellproxy-home-$$"
+    mkdir -p "$HOME"
+
     chmod +x "$SHELLPROXY_DIR/install.sh"
     chmod +x "$SHELLPROXY_DIR/uninstall.sh"
 }
 
 teardown() {
     rm -rf "$TEST_INSTALL_DIR"
+    rm -rf "$HOME"
+    export HOME="$REAL_HOME"
 }
 
 @test "install.sh --help shows usage" {
