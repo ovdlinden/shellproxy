@@ -1,5 +1,5 @@
 #!/bin/bash
-# Command router - routes commands to Docker containers or local execution
+# Command router - routes commands to Docker containers or passes through to local
 # shellcheck disable=SC2155
 set -euo pipefail
 
@@ -13,32 +13,64 @@ cmd="${0##*/}"
 # Debug mode
 [[ "${SHELLPROXY_DEBUG:-}" == "1" ]] && set -x
 
-# ----- Early exits (fast path to local execution) -----
+# Find the real binary, excluding shellproxy/bin from PATH
+find_real_binary() {
+    local cmd="$1"
+    local IFS=':'
+    for dir in $PATH; do
+        [[ "$dir" == "$SHELLPROXY_DIR/bin" ]] && continue
+        [[ -x "$dir/$cmd" ]] && echo "$dir/$cmd" && return 0
+    done
+    return 1
+}
 
-[[ "${SHELLPROXY_DISABLE:-}" == "1" ]] && exec command "$cmd" "$@"
-[[ -z "${SHELLPROXY_PROJECT:-}" ]] && exec command "$cmd" "$@"
+# Pass-through: run the real (non-shellproxy) version of the command
+pass_through() {
+    local real_bin
+    real_bin=$(find_real_binary "$cmd") || {
+        echo "[shellproxy] Cannot find '$cmd' in PATH (excluding shellproxy)" >&2
+        exit 127
+    }
+    exec "$real_bin" "$@"
+}
+
+# ----- Pass-through: command should not be routed -----
+
+[[ "${SHELLPROXY_DISABLE:-}" == "1" ]] && pass_through "$@"
+[[ -z "${SHELLPROXY_PROJECT:-}" ]] && pass_through "$@"
 
 taskfile=$(get_config_file "$SHELLPROXY_PROJECT")
-[[ -z "$taskfile" ]] && exec command "$cmd" "$@"
+[[ -z "$taskfile" ]] && pass_through "$@"
 
 container=$(get_container "$taskfile")
-[[ -z "$container" ]] && exec command "$cmd" "$@"
+[[ -z "$container" ]] && pass_through "$@"
 
-# Check if this command should be routed for this project
 if ! command_allowed "$taskfile" "$cmd"; then
-    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && echo "[shellproxy] '$cmd' not in TASKFILE_EXEC_COMMANDS, using local" >&2
-    exec command "$cmd" "$@"
+    pass_through "$@"
 fi
+
+# ----- From here, routing is expected. Errors are errors. -----
 
 compose_file=$(find_compose_file "$SHELLPROXY_PROJECT" "$taskfile" || true)
 if [[ -z "$compose_file" ]]; then
-    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && echo "[shellproxy] No compose file found, using local" >&2
-    exec command "$cmd" "$@"
+    echo "[shellproxy] No compose file found for project '$SHELLPROXY_PROJECT'" >&2
+    echo "  Create a docker-compose.yml or check your project layout" >&2
+    exit 1
 fi
 
-if ! container_running "$container"; then
-    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && echo "[shellproxy] Container '$container' not running, using local" >&2
-    exec command "$cmd" "$@"
+container_id=$(resolve_container_id "$compose_file" "$container")
+if [[ -z "$container_id" ]]; then
+    echo "[shellproxy] Service '$container' not found in $compose_file" >&2
+    echo "  Start it:  docker compose -f $compose_file up -d $container" >&2
+    echo "  Run local: SHELLPROXY_DISABLE=1 $cmd $*" >&2
+    exit 1
+fi
+
+if ! container_running "$container_id"; then
+    echo "[shellproxy] Container '$container' is not running" >&2
+    echo "  Start it:  docker compose -f $compose_file up -d $container" >&2
+    echo "  Run local: SHELLPROXY_DISABLE=1 $cmd $*" >&2
+    exit 1
 fi
 
 # ----- Route to container -----
@@ -51,24 +83,11 @@ if [[ "${SHELLPROXY_LOG:-}" == "1" ]]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $cmd → $container" >> "$log_file"
 fi
 
-# Execute in container with fallback on Docker errors
-err_file="/tmp/shellproxy-err-$$"
-trap 'rm -f "$err_file"' EXIT
-
+# Execute in container
 if [[ "${SHELLPROXY_USE_COMPOSE:-}" == "1" ]]; then
     env_file=""
     [[ -f "$SHELLPROXY_PROJECT/.env" ]] && env_file="$SHELLPROXY_PROJECT/.env"
-    container_exec "$compose_file" "$env_file" "$container" "$workdir" "$cmd" "$@" 2>"$err_file" && exit 0
+    container_exec "$compose_file" "$env_file" "$container" "$workdir" "$cmd" "$@"
 else
-    container_exec_direct "$container" "$workdir" "$cmd" "$@" 2>"$err_file" && exit 0
+    container_exec_direct "$container_id" "$workdir" "$cmd" "$@"
 fi
-
-# Command failed - check if it's a Docker error warranting fallback
-if grep -qE "No such container|is not running|Cannot connect|connection refused" "$err_file" 2>/dev/null; then
-    [[ "${SHELLPROXY_VERBOSE:-}" == "1" ]] && echo "[shellproxy] Docker error, falling back to local" >&2
-    exec command "$cmd" "$@"
-fi
-
-# Non-Docker error: show error and exit with failure
-cat "$err_file" >&2
-exit 1

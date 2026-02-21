@@ -37,7 +37,7 @@ setup() {
     [ -z "$project_root" ]
 }
 
-@test "dispatch falls back to local when SHELLPROXY_DISABLE=1" {
+@test "dispatch passes through to local when SHELLPROXY_DISABLE=1" {
     export SHELLPROXY_PROJECT="$FIXTURES/docker-project"
     export SHELLPROXY_DISABLE=1
 
@@ -52,7 +52,7 @@ setup() {
     unset SHELLPROXY_DISABLE
 }
 
-@test "dispatch falls back to local without SHELLPROXY_PROJECT" {
+@test "dispatch passes through to local without SHELLPROXY_PROJECT" {
     unset SHELLPROXY_PROJECT
 
     ln -sf "$SHELLPROXY_DIR/dispatch" "$SHELLPROXY_DIR/bin/echo"
@@ -63,7 +63,7 @@ setup() {
     rm -f "$SHELLPROXY_DIR/bin/echo"
 }
 
-@test "dispatch falls back to local for project without container" {
+@test "dispatch passes through to local for project without container" {
     export SHELLPROXY_PROJECT="$FIXTURES/local-project"
 
     ln -sf "$SHELLPROXY_DIR/dispatch" "$SHELLPROXY_DIR/bin/echo"
@@ -122,7 +122,7 @@ setup() {
     [ "$result" = "/var/www/html/src/app" ]
 }
 
-@test "dispatch falls back to local when Taskfile missing" {
+@test "dispatch passes through to local when Taskfile missing" {
     export SHELLPROXY_PROJECT="/tmp/nonexistent-project-$$"
     mkdir -p "$SHELLPROXY_PROJECT"
 
@@ -135,7 +135,7 @@ setup() {
     rm -rf "$SHELLPROXY_PROJECT"
 }
 
-@test "dispatch falls back to local when container not configured" {
+@test "dispatch passes through to local when container not configured" {
     export SHELLPROXY_PROJECT="$FIXTURES/local-project"
 
     ln -sf "$SHELLPROXY_DIR/dispatch" "$SHELLPROXY_DIR/bin/echo"

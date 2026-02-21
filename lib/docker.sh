@@ -56,3 +56,12 @@ container_exec_direct() {
     # shellcheck disable=SC2086
     docker exec $tty_flag -w "$workdir" "$container" "$@"
 }
+
+# Resolve docker-compose service name to actual container ID
+# Uses compose file to find the correct container
+resolve_container_id() {
+    local compose_file="$1"
+    local service="$2"
+
+    docker compose -f "$compose_file" ps -q "$service" 2>/dev/null | head -1
+}
