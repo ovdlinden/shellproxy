@@ -67,6 +67,51 @@ if ! command -v curl &>/dev/null; then
     warn "curl not found - fast container health checks unavailable"
 fi
 
+# Install gum for TUI (optional but recommended)
+install_gum() {
+    if command -v gum &>/dev/null; then
+        log "gum already installed"
+        return 0
+    fi
+
+    log "Installing gum (TUI toolkit for 'shellproxy init')..."
+
+    if command -v brew &>/dev/null; then
+        brew install gum 2>/dev/null && return 0
+    fi
+
+    # Direct binary download for Linux/macOS without Homebrew
+    local os
+    local arch
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    arch=$(uname -m)
+    [[ "$arch" == "x86_64" ]] && arch="amd64"
+    [[ "$arch" == "aarch64" || "$arch" == "arm64" ]] && arch="arm64"
+
+    # Map OS names
+    [[ "$os" == "darwin" ]] && os="Darwin"
+    [[ "$os" == "linux" ]] && os="Linux"
+
+    local version="0.14.5"
+    local url="https://github.com/charmbracelet/gum/releases/download/v${version}/gum_${version}_${os}_${arch}.tar.gz"
+
+    if command -v curl &>/dev/null; then
+        mkdir -p "$INSTALL_DIR/bin"
+        if curl -sL "$url" | tar xz -C /tmp gum 2>/dev/null; then
+            mv /tmp/gum "$INSTALL_DIR/bin/gum"
+            chmod +x "$INSTALL_DIR/bin/gum"
+            log "Installed gum to $INSTALL_DIR/bin/gum"
+            return 0
+        fi
+    fi
+
+    warn "Could not auto-install gum. Install manually: brew install gum"
+    warn "'shellproxy init' will not be available without gum"
+    return 1
+}
+
+install_gum || true  # Don't fail installation if gum fails
+
 # Remove existing installation
 if [[ -d "$INSTALL_DIR" ]]; then
     warn "Existing installation found at $INSTALL_DIR"
@@ -112,6 +157,9 @@ default_shims=(php node npm npx yarn pnpm composer artisan)
 for cmd in "${default_shims[@]}"; do
     ln -sf "$INSTALL_DIR/dispatch" "$INSTALL_DIR/bin/$cmd"
 done
+
+# Add shellproxy CLI to bin
+ln -sf "$INSTALL_DIR/shellproxy" "$INSTALL_DIR/bin/shellproxy"
 
 log "Created shims for: ${default_shims[*]}"
 

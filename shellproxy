@@ -23,6 +23,9 @@ else
     GREEN='' YELLOW='' RED='' BLUE='' DIM='' BOLD='' NC=''
 fi
 
+# Helper functions
+error() { echo -e "${RED}▸${NC} $*" >&2; }
+
 cmd_status() {
     if [[ -z "${SHELLPROXY_PROJECT:-}" ]]; then
         echo "Not in a Taskfile project"
@@ -105,6 +108,384 @@ cmd_off() {
     echo -e "${YELLOW}Routing disabled${NC}"
     echo "Note: This only affects the current shell."
     echo "Run 'shellproxy on' to re-enable."
+}
+
+cmd_init() {
+    source "$SHELLPROXY_DIR/lib/detect.sh"
+
+    # Check for gum
+    if ! command -v gum &>/dev/null; then
+        error "gum is required for interactive init"
+        echo ""
+        echo "Install gum:"
+        echo "  brew install gum"
+        echo ""
+        echo "Or re-run the installer:"
+        echo "  curl -fsSL https://raw.githubusercontent.com/ovdlinden/shellproxy/main/install.sh | bash"
+        return 1
+    fi
+
+    # Check for existing config
+    if [[ -f "Taskfile.local" ]]; then
+        if ! gum confirm "Taskfile.local already exists. Overwrite?"; then
+            echo "Cancelled."
+            return 0
+        fi
+    fi
+
+    # Find docker-compose.yml
+    local compose_file
+    compose_file=$(find_compose_in_cwd) || {
+        echo -e "${RED}No docker-compose.yml found in current directory${NC}"
+        echo ""
+        echo "Make sure you're in a directory with a docker-compose.yml file."
+        return 1
+    }
+
+    gum style --foreground 212 "Found: $compose_file"
+    echo ""
+
+    # Detect and select service
+    local services
+    services=$(detect_services "$compose_file")
+
+    if [[ -z "$services" ]]; then
+        echo -e "${RED}No services found in $compose_file${NC}"
+        return 1
+    fi
+
+    local service
+    service=$(echo "$services" | tr ' ' '\n' | gum choose --header "Select container to route commands to:")
+
+    [[ -z "$service" ]] && return 1
+
+    # Helper: check if Taskfile has an init task
+    has_taskfile_init() {
+        local taskfile="$1"
+        # Match: init(), task:init(), task_init(), function init {, function task:init {
+        [[ -f "$taskfile" ]] && grep -qE '^(function )?(task:|task_)?init\s*(\(\)|{|\{)' "$taskfile"
+    }
+
+    # Helper: offer to run Taskfile init
+    # Returns 0 if init was run (caller should re-check container state)
+    # Returns 1 if no init task or user declined
+    offer_taskfile_init() {
+        # Check Taskfile.local first, fall back to Taskfile
+        if ! has_taskfile_init "$PWD/Taskfile.local" && ! has_taskfile_init "$PWD/Taskfile"; then
+            return 1
+        fi
+
+        echo ""
+        gum style --foreground 212 "This project has a Taskfile init task."
+        echo ""
+
+        if gum confirm "Run ./Taskfile init now?"; then
+            echo ""
+            ./Taskfile init
+            local exit_code=$?
+            echo ""
+
+            if [[ $exit_code -ne 0 ]]; then
+                gum style --foreground 196 "Taskfile init failed (exit code $exit_code)"
+                return 1
+            fi
+
+            gum style --foreground 82 "Taskfile init completed!"
+            echo ""
+            return 0
+        else
+            echo ""
+            echo "Run manually: ./Taskfile init"
+            echo "Then run: shellproxy init"
+            return 1
+        fi
+    }
+
+    # Check container state
+    local container_id
+    container_id=$(get_container_id "$compose_file" "$service")
+
+    if [[ -z "$container_id" ]]; then
+        # Container doesn't exist yet
+        echo ""
+        gum style --foreground 214 "Container for '$service' doesn't exist yet."
+
+        # Offer to run Taskfile init
+        if offer_taskfile_init; then
+            # Init ran successfully - refresh container ID and continue
+            container_id=$(get_container_id "$compose_file" "$service")
+            if [[ -z "$container_id" ]] || ! service_running "$compose_file" "$service"; then
+                gum style --foreground 196 "Container still not running after init."
+                echo ""
+                echo "Check the logs: docker compose -f $compose_file logs $service"
+                return 1
+            fi
+        else
+            # No Taskfile init or user declined - offer to start manually
+            echo ""
+            if gum confirm "Create and start it now?"; then
+                echo ""
+                if ! docker compose -f "$compose_file" up -d "$service" 2>&1 | head -10; then
+                    gum style --foreground 196 "Failed to start container"
+                    return 1
+                fi
+
+                # Wait for container to be running
+                echo ""
+                if ! gum spin --spinner dot --title "Waiting for container..." -- \
+                    bash -c "for i in {1..30}; do docker compose -f '$compose_file' ps -q '$service' 2>/dev/null | grep -q . && exit 0; sleep 1; done; exit 1"; then
+                    gum style --foreground 196 "Container failed to start"
+                    echo ""
+                    gum style --foreground 212 "Recent logs:"
+                    docker compose -f "$compose_file" logs --tail=20 "$service" 2>&1
+                    return 1
+                fi
+
+                container_id=$(get_container_id "$compose_file" "$service")
+                gum style --foreground 82 "Container started!"
+                echo ""
+            else
+                echo ""
+                echo "Start with: docker compose -f $compose_file up -d $service"
+                echo "Then run: shellproxy init"
+                return 1
+            fi
+        fi
+    else
+        # Container exists - check its state
+        local state
+        state=$(get_container_state "$container_id")
+
+        case "$state" in
+            running)
+                # Good to go
+                ;;
+            exited)
+                local exit_code
+                exit_code=$(get_container_exit_code "$container_id")
+                echo ""
+                if [[ "$exit_code" == "0" ]]; then
+                    gum style --foreground 214 "Container '$service' is stopped."
+                else
+                    gum style --foreground 196 "Container '$service' exited with code $exit_code"
+
+                    # For crashed containers, offer Taskfile init first
+                    if offer_taskfile_init; then
+                        # Init ran - refresh container ID and check state
+                        container_id=$(get_container_id "$compose_file" "$service")
+                        if service_running "$compose_file" "$service"; then
+                            # Container is now running, skip the menu
+                            :
+                        else
+                            gum style --foreground 196 "Container still not running after init."
+                            return 1
+                        fi
+                    else
+                        # No init or user declined - show action menu
+                        echo ""
+
+                        local action
+                        action=$(gum choose --header "What would you like to do?" \
+                            "Start the container" \
+                            "View logs" \
+                            "Cancel")
+
+                        case "$action" in
+                            "Start the container")
+                                echo ""
+                                docker compose -f "$compose_file" up -d "$service"
+
+                                if ! gum spin --spinner dot --title "Waiting for container..." -- \
+                                    bash -c "for i in {1..30}; do docker compose -f '$compose_file' ps --status running --format '{{.Service}}' 2>/dev/null | grep -qx '$service' && exit 0; sleep 1; done; exit 1"; then
+                                    gum style --foreground 196 "Container failed to start"
+                                    echo ""
+                                    gum style --foreground 212 "Recent logs:"
+                                    docker compose -f "$compose_file" logs --tail=20 "$service" 2>&1
+                                    return 1
+                                fi
+                                gum style --foreground 82 "Container started!"
+                                echo ""
+                                ;;
+                            "View logs")
+                                echo ""
+                                docker compose -f "$compose_file" logs --tail=30 "$service"
+                                return 1
+                                ;;
+                            *)
+                                return 1
+                                ;;
+                        esac
+                    fi
+                fi
+
+                # Handle stopped (exit 0) case - show simple start menu
+                if [[ "$exit_code" == "0" ]]; then
+                    echo ""
+                    local action
+                    action=$(gum choose --header "What would you like to do?" \
+                        "Start the container" \
+                        "Cancel")
+
+                    case "$action" in
+                        "Start the container")
+                            echo ""
+                            docker compose -f "$compose_file" up -d "$service"
+
+                            if ! gum spin --spinner dot --title "Waiting for container..." -- \
+                                bash -c "for i in {1..30}; do docker compose -f '$compose_file' ps --status running --format '{{.Service}}' 2>/dev/null | grep -qx '$service' && exit 0; sleep 1; done; exit 1"; then
+                                gum style --foreground 196 "Container failed to start"
+                                return 1
+                            fi
+                            gum style --foreground 82 "Container started!"
+                            echo ""
+                            ;;
+                        *)
+                            return 1
+                            ;;
+                    esac
+                fi
+                ;;
+            created|paused|restarting)
+                echo ""
+                gum style --foreground 214 "Container '$service' is in state: $state"
+                echo ""
+
+                if gum confirm "Start the container?"; then
+                    docker compose -f "$compose_file" up -d "$service"
+
+                    if ! gum spin --spinner dot --title "Waiting for container..." -- \
+                        bash -c "for i in {1..30}; do docker compose -f '$compose_file' ps --status running --format '{{.Service}}' 2>/dev/null | grep -qx '$service' && exit 0; sleep 1; done; exit 1"; then
+                        gum style --foreground 196 "Container failed to start"
+                        return 1
+                    fi
+                    gum style --foreground 82 "Container started!"
+                    echo ""
+                else
+                    return 1
+                fi
+                ;;
+            not_found)
+                # Container ID exists in compose but not in Docker - offer to recreate
+                echo ""
+                gum style --foreground 214 "Container for '$service' needs to be created."
+
+                # Offer Taskfile init
+                if offer_taskfile_init; then
+                    # Init ran - refresh container ID and check state
+                    container_id=$(get_container_id "$compose_file" "$service")
+                    if [[ -z "$container_id" ]] || ! service_running "$compose_file" "$service"; then
+                        gum style --foreground 196 "Container still not running after init."
+                        return 1
+                    fi
+                else
+                    # No init or user declined - offer to start manually
+                    echo ""
+                    if gum confirm "Create and start the container?"; then
+                        echo ""
+                        docker compose -f "$compose_file" up -d "$service"
+
+                        if ! gum spin --spinner dot --title "Waiting for container..." -- \
+                            bash -c "for i in {1..30}; do docker compose -f '$compose_file' ps --status running --format '{{.Service}}' 2>/dev/null | grep -qx '$service' && exit 0; sleep 1; done; exit 1"; then
+                            gum style --foreground 196 "Container failed to start"
+                            echo ""
+                            gum style --foreground 212 "Recent logs:"
+                            docker compose -f "$compose_file" logs --tail=20 "$service" 2>&1
+                            return 1
+                        fi
+
+                        # Refresh container ID after creation
+                        container_id=$(get_container_id "$compose_file" "$service")
+                        gum style --foreground 82 "Container started!"
+                        echo ""
+                    else
+                        return 1
+                    fi
+                fi
+                ;;
+            dead)
+                gum style --foreground 196 "Container '$service' is dead."
+                echo ""
+                echo "Try removing and recreating the container:"
+                echo "  docker compose -f $compose_file rm -f $service"
+                echo "  docker compose -f $compose_file up -d $service"
+                return 1
+                ;;
+            *)
+                gum style --foreground 196 "Container '$service' is in unexpected state: $state"
+                return 1
+                ;;
+        esac
+    fi
+
+    # Detect and select commands
+    gum spin --spinner dot --title "Detecting available commands..." -- sleep 1
+
+    local available_commands
+    available_commands=$(detect_commands "$container_id")
+
+    if [[ -z "$available_commands" ]]; then
+        gum style --foreground 214 "No common commands detected in container"
+        echo "Using default suggestions..."
+        available_commands="php node npm composer"
+    fi
+
+    # Convert detected commands to comma-separated for --selected
+    local preselected
+    preselected=$(echo "$available_commands" | tr ' ' ',')
+
+    local selected_commands
+    selected_commands=$(echo "$available_commands" | tr ' ' '\n' | \
+        gum choose --no-limit --header "Select commands to route to container:" --selected="$preselected")
+
+    [[ -z "$selected_commands" ]] && {
+        echo "No commands selected. Cancelled."
+        return 1
+    }
+
+    # Convert to space-separated
+    selected_commands=$(echo "$selected_commands" | tr '\n' ' ' | xargs)
+
+    # Generate Taskfile.local
+    cat > Taskfile.local <<EOF
+# shellproxy configuration (generated by shellproxy init)
+# This file configures which commands route to the Docker container
+#
+# Edit this file to customize:
+#   TASKFILE_EXEC_CONTAINER - The docker-compose service name
+#   TASKFILE_EXEC_COMMANDS  - Space-separated list of commands to route
+
+TASKFILE_EXEC_CONTAINER="$service"
+TASKFILE_EXEC_COMMANDS="$selected_commands"
+EOF
+
+    gum style --foreground 82 "Created Taskfile.local"
+
+    # Add to .gitignore
+    if [[ -f ".gitignore" ]]; then
+        if ! grep -qx "Taskfile.local" .gitignore 2>/dev/null; then
+            echo "Taskfile.local" >> .gitignore
+            gum style --foreground 82 "Added to .gitignore"
+        fi
+    else
+        echo "Taskfile.local" > .gitignore
+        gum style --foreground 82 "Created .gitignore"
+    fi
+
+    # Create Taskfile if it doesn't exist (symlink to Taskfile.local)
+    if [[ ! -f "Taskfile" ]]; then
+        ln -s Taskfile.local Taskfile
+        gum style --foreground 82 "Created Taskfile symlink"
+    fi
+
+    echo ""
+    gum style --foreground 82 --bold "Setup complete!"
+    echo ""
+    echo "Commands routed to container '$service':"
+    for cmd in $selected_commands; do
+        echo "  • $cmd"
+    done
+    echo ""
+    echo -e "Test with: ${BOLD}$(echo "$selected_commands" | cut -d' ' -f1) --version${NC}"
 }
 
 cmd_which() {
@@ -215,6 +596,7 @@ cmd_help() {
     echo "  shellproxy <command> [options]"
     echo ""
     echo -e "${BOLD}Commands:${NC}"
+    echo "  init          Interactive setup for current project (requires gum)"
     echo "  status        Show current project and routing status"
     echo "  info          Show detailed information about shellproxy"
     echo "  on            Enable routing for this shell"
@@ -228,6 +610,7 @@ cmd_help() {
     echo "  version       Show version"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
+    echo "  shellproxy init                    # Interactive project setup"
     echo "  shellproxy status"
     echo "  shellproxy which php"
     echo "  shellproxy link composer"
@@ -238,12 +621,63 @@ cmd_version() {
     echo "shellproxy v${VERSION}"
 }
 
+# Internal command: output env var assignments for shell hooks
+# Called by all hooks: eval "$(shellproxy __hook-update "$PWD")"
+cmd___hook_update() {
+    local cwd="${1:-$PWD}"
+
+    local project_root
+    project_root=$(find_project_root "$cwd" 2>/dev/null) || true
+
+    if [[ -z "$project_root" ]]; then
+        echo "unset SHELLPROXY_PROJECT"
+        echo "unset SHELLPROXY_CONTAINER"
+        echo "unset SHELLPROXY_COMMANDS"
+        echo "unset SHELLPROXY_MODE"
+        return 0
+    fi
+
+    echo "export SHELLPROXY_PROJECT=\"$project_root\""
+
+    local taskfile
+    taskfile=$(get_config_file "$project_root")
+
+    if [[ -z "$taskfile" ]]; then
+        echo "unset SHELLPROXY_CONTAINER"
+        echo "unset SHELLPROXY_COMMANDS"
+        echo "export SHELLPROXY_MODE=\"local\""
+        return 0
+    fi
+
+    local container
+    container=$(get_container "$taskfile")
+
+    if [[ -n "$container" ]]; then
+        echo "export SHELLPROXY_CONTAINER=\"$container\""
+        echo "export SHELLPROXY_MODE=\"docker\""
+    else
+        echo "unset SHELLPROXY_CONTAINER"
+        echo "export SHELLPROXY_MODE=\"local\""
+    fi
+
+    local commands
+    commands=$(get_commands "$taskfile")
+
+    if [[ -n "$commands" ]]; then
+        echo "export SHELLPROXY_COMMANDS=\"$commands\""
+    else
+        echo "unset SHELLPROXY_COMMANDS"
+    fi
+}
+
 # Main
 main() {
     local cmd="${1:-status}"
     shift 2>/dev/null || true
 
     case "$cmd" in
+        __hook-update) cmd___hook_update "$@" ;;
+        init)    cmd_init "$@" ;;
         status)  cmd_status "$@" ;;
         info)    cmd_info "$@" ;;
         debug)   cmd_debug "$@" ;;

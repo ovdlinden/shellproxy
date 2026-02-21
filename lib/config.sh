@@ -103,7 +103,15 @@ find_compose_file() {
         [[ -f "$f" ]] && echo "$f" && return 0
     done
 
-    # 2. Check TASKFILE_DEPS
+    # 2. Check common subdirectories
+    local subdirs=(dev docker .docker infra infrastructure)
+    for subdir in "${subdirs[@]}"; do
+        for f in "$project_dir/$subdir/docker-compose.yml" "$project_dir/$subdir/docker-compose.yaml" "$project_dir/$subdir/compose.yml" "$project_dir/$subdir/compose.yaml"; do
+            [[ -f "$f" ]] && echo "$f" && return 0
+        done
+    done
+
+    # 3. Check TASKFILE_DEPS
     local git_root
     git_root=$(git -C "$project_dir" rev-parse --show-toplevel 2>/dev/null)
     [[ -z "$git_root" ]] && return 1
