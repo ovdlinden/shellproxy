@@ -38,7 +38,11 @@ test: add integration test
 ## Architecture
 
 ```
-dispatch          → Routes commands
-lib/config.sh     → Parses Taskfile
+dispatch          → Routes commands (pass-through or docker exec)
+shellproxy        → CLI (status, init, link, __hook-update, etc.)
+lib/config.sh     → Parses Taskfile configuration
 lib/docker.sh     → Docker operations
+lib/detect.sh     → Auto-detection for shellproxy init
+hooks/hook.{zsh,bash,fish} → Thin wrappers calling shellproxy __hook-update
+hooks/prompt.zsh  → Zsh prompt indicator
 ```
